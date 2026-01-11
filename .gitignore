@@ -1,0 +1,47 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.out
+
+# Test executables
+*_tests
+*_test
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.cproject
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies downloaded by CMake
+_deps/
+
+# Coverage reports
+*.gcov
+*.gcda
+*.gcno
+coverage/
