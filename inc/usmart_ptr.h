@@ -45,6 +45,7 @@
 #include "dalloc.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <new>
 
 #define USMART_PTR_VERSION  "2.3.0"
 
