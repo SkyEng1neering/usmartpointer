@@ -36,11 +36,13 @@ target_compile_definitions(dalloc PUBLIC
 # Test executable
 add_executable(usmart_ptr_tests
     usmart_ptr_tests.cpp
+    test_with_uvector.cpp
 )
 
 target_include_directories(usmart_ptr_tests PRIVATE
     ../inc
     ../../dalloc/inc
+    ../../uvector/inc
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

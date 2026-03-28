@@ -47,7 +47,7 @@
 #include <stddef.h>
 #include <new>
 
-#define USMART_PTR_VERSION  "2.3.0"
+#define USMART_PTR_VERSION  "2.3.1"
 
 /*--------------------------------------------------------------------
  * Minimal type traits (no STL dependency)
@@ -222,9 +222,59 @@ public:
         other.constructed_ = 0;
     }
 
-    /* Destructor - frees owned memory */
+    /* Destructor - frees owned memory.
+     *
+     * IMPORTANT: Does NOT call reset() directly.
+     *
+     * When *this resides inside a dalloc-managed heap buffer (e.g. stored as an
+     * element of uvector), calling inner element destructors may trigger
+     * dfree/defrag which compacts the heap and shifts the containing buffer.
+     * After that shift, the C++ 'this' pointer is stale — any dereference of
+     * *this is undefined behaviour.
+     *
+     * To avoid this we:
+     *   1. Capture all needed member values into stack locals before inner dtors.
+     *   2. Call inner element destructors (may make 'this' stale).
+     *   3. Free via USING_PTR_VALUE: search alloc_info by the ALLOCATION VALUE
+     *      rather than by the tracking-variable ADDRESS (&ptr_).  The address
+     *      of ptr_ moves when the buffer shifts, but alloc_info is updated by
+     *      defrag to reflect the new address; the VALUE stored there (pointer to
+     *      the owned object) does not change until we clear it.  dfree with
+     *      USING_PTR_VALUE finds the entry and, as a side-effect, writes NULL to
+     *      the tracking variable at its NEW (correct) location before freeing.
+     *   4. Do NOT write to *this after step 2 — stale writes would corrupt
+     *      whichever heap element now occupies the old *this address.
+     */
     ~usmart_ptr() {
-        reset();
+        if (ptr_ == nullptr) {
+            return;
+        }
+        /* Capture before any dfree/defrag that could make 'this' stale. */
+        T*       saved_ptr         = ptr_;
+        heap_t*  saved_heap        = heap_;
+        uint32_t saved_constructed = constructed_;
+
+        /* Call element destructors.  Each call may trigger dfree → defrag →
+         * shift of the buffer that contains *this.  After this loop 'this' is
+         * potentially stale — do NOT dereference *this past this point. */
+        for (uint32_t i = 0; i < saved_constructed; i++) {
+            saved_ptr[i].~T();
+        }
+
+        /* Free the allocation by value: dalloc updates the tracking address in
+         * alloc_info during defrag, so &ptr_ (the OLD address) is no longer in
+         * alloc_info; the entry now records the NEW address of ptr_.  Searching
+         * by VALUE (saved_ptr) finds the correct entry regardless of address
+         * changes.  The defrag step inside dfree also writes NULL to the tracking
+         * variable at its new location — leaving element[i].ptr_ == NULL so that
+         * the subsequent shift loop in uvector::pop() sees a clean target. */
+        if (saved_heap != nullptr) {
+            dfree(saved_heap, reinterpret_cast<void**>(&saved_ptr), USING_PTR_VALUE);
+        }
+        /* Do NOT write ptr_/size_/constructed_ to *this here.  'this' is stale
+         * if any inner destructor above triggered defrag.  Writing to it would
+         * overwrite the heap element that memmove placed at the old *this
+         * address, corrupting live data. */
     }
 
     /* Deleted copy constructor - no copying allowed */
@@ -455,6 +505,13 @@ public:
      * @return true if allocation succeeded
      */
     bool allocate(uint32_t n = 1) {
+#ifdef USE_SINGLE_HEAP_MEMORY
+        /* Lazy init: static objects constructed before dalloc_register_heap()
+         * get heap_ = NULL. Reassign on first allocation attempt. */
+        if (heap_ == nullptr) {
+            heap_ = dalloc_get_default_heap();
+        }
+#endif
         if (heap_ == nullptr) {
             USMART_PTR_DEBUG("usmart_ptr: heap not set\n");
             return false;
@@ -738,6 +795,13 @@ public:
      *--------------------------------------------------------------------*/
 
     bool allocate(uint32_t n) {
+#ifdef USE_SINGLE_HEAP_MEMORY
+        /* Lazy init: static objects constructed before dalloc_register_heap()
+         * get heap_ = NULL. Reassign on first allocation attempt. */
+        if (heap_ == nullptr) {
+            heap_ = dalloc_get_default_heap();
+        }
+#endif
         if (heap_ == nullptr) {
             USMART_PTR_DEBUG("usmart_ptr<T[]>: heap not set\n");
             return false;

@@ -9,6 +9,10 @@
 /* Enable single heap mode */
 #define USE_SINGLE_HEAP_MEMORY
 
+/* 8-byte alignment: usmart_ptr<T> contains pointer members that require
+ * 8-byte alignment on 64-bit systems. Also matches production config. */
+#define ALLOCATION_ALIGNMENT_BYTES  8U
+
 /* Disable debug output during tests */
 #define dalloc_debug(...) ((void)0)
 
